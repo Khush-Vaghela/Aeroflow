@@ -2,23 +2,31 @@
 
 **Purpose.** A relational database modeling airline operations —
 fleet, maintenance, airport infrastructure, routing, multi-leg flights,
-crew/pilot scheduling, and passenger booking.
+crew/pilot scheduling, and passenger booking/fares with flight-delay tracking and route-graph journey
+planning.
 
-**Architecture.** A normalized PostgreSQL schema of 19 tables with composite keys for per-leg operations, foreign keys
+**Architecture.** A normalized PostgreSQL schema of 21 tables with composite keys for per-leg operations, foreign keys
 tying every subsystem together, `CHECK` constraints on all enumerated status
-columns, and three triggers enforcing invariants a `CHECK` constraint can't
+columns, three triggers enforcing invariants a `CHECK` constraint can't
 express alone (a cross-table fuel-capacity rule, and automatic waitlist
-capacity-guarding/promotion on `Booking`).
+capacity-guarding/promotion on `Booking`), and three stored functions that
+treat the airport network as a graph (`Route` = edge, `Route_Fare` = edge
+weight) for journey search, cheapest-path, and cheapest-path-within-k-stops.
 
-**Features.** Automatic delay computation via generated columns, a fully
-seeded sample dataset, and an ER diagram for quick onboarding.
+**Features.** Automatic delay computation via generated columns, a
+Reservation/Booking model with real fares, three graph-search stored
+functions (DFS all-paths, Dijkstra, Bellman-Ford k-stops), a fully seeded
+sample dataset, and an ER diagram for quick onboarding.
 
 ## Project files
-- `aeroflow_schema_v2.sql` — table definitions, constraints, trigger
+- `aeroflow_schema_v2.sql` — table definitions, constraints, triggers, and
+  the three journey-planning stored functions
 - `aeroflow_insert_data_v2.sql` — sample dataset (10 airlines, 20 aircraft,
-  15 flights / 25 legs, 30 bookings, and more) conformed to the schema
+  15 flights / 25 legs, 22 reservations, 30 bookings, and more) conformed to
+  the schema
 - `aeroflow_er_diagram.mermaid` — entity-relationship diagram
 - `README.md` — this file
+
 
 ## ER diagram
 
@@ -29,11 +37,65 @@ See `aeroflow_er_diagram.mermaid` — renders natively in GitHub READMEs
 
 - **Fleet**: `Airline` → `Aircraft` → `Aircraft_Live_Status`, `Maintenance`
 - **Infrastructure**: `Airport` → `Runway`, `Gate`
-- **Network**: `Route` (airport pairs) → `Flight_Legs` (route + sequence per
-  flight) → `Flight`
+- **Network**: `Route` (airport pairs, priced by `Route_Fare`) → `Flight_Legs`
+  (route + sequence per flight) → `Flight`
 - **Crew**: `Pilot`, `Crew` assigned per-leg via `Pilot_Assign`, `Crew_Assign`
-- **Passengers**: `User` → `Booking` (tied to a specific leg + seat) → `Luggage`
+- **Passengers**: `User` → `Reservation` (one per purchase) → `Booking` (one
+  per leg, tied to a specific seat + fare) → `Luggage`
 - **Ground ops**: `Uses_Runway`, `Uses_Gate` (per-leg, per-airport usage)
+
+## Journey planning (source → destination, graph queries)
+
+These three requests are graph problems over the airport network — `Airport`
+is a node, `Route` is a directed edge, `Route_Fare` is the edge weight — not
+ordinary row-filtering queries, so each is implemented as a stored function
+in `aeroflow_schema_v2.sql` using the algorithm actually suited to what it's
+answering, rather than one generic approach stretched across all three:
+
+| # | Question | Algorithm | Why this one |
+|---|----------|-----------|---------------|
+| 1 | All possible journeys | DFS via recursive CTE, path array as visited-set | Enumerating *every* simple path is inherently exponential — that's what "list them all" requires, any algorithm included |
+| 2 | Cheapest journey | Dijkstra's algorithm | Finds the answer in polynomial time (O(V²+E) here) without ever enumerating all paths — the reason to prefer it over "run #1 and take MIN()" |
+| 3 | Cheapest journey, ≤ k stops | Bellman-Ford, restricted to k+1 relaxation rounds | Dijkstra has no native hop-limit variant without expanding the state space to (node, stops-used) pairs; Bellman-Ford naturally bounds path length by the number of rounds run |
+
+All three take an optional `p_seat_type` (`'Economy'` default or
+`'Business'`) since fares differ by cabin class.
+
+**1. All possible journeys between a source and destination, with total cost**
+```sql
+SELECT journey_path, num_stops, total_cost
+FROM AeroFlow.fn_all_journeys(1, 7);   -- Airport 1 = AMD, Airport 7 = CCU
+-- journey_path             | num_stops | total_cost
+-- AMD -> CCU               | 0         | 9900.00
+-- AMD -> DEL -> CCU        | 1         | 15200.00
+-- AMD -> BOM -> DEL -> CCU | 2         | 18500.00
+-- ... (8 total paths within the default 4-stop limit)
+```
+`p_max_stops` (default 4) bounds recursion depth; raise it if you need longer
+itineraries. The cycle-blocking `NOT (dest = ANY(path))` check means it never
+loops forever even without that bound — it just controls how deep the DFS
+goes.
+
+**2. The single cheapest journey**
+```sql
+SELECT journey_path, total_cost
+FROM AeroFlow.fn_cheapest_journey(1, 7);
+-- AMD -> CCU | 9900.00
+```
+
+**3. Cheapest journey with at most k stops**
+```sql
+SELECT journey_path, num_stops, total_cost
+FROM AeroFlow.fn_cheapest_journey_k_stops(1, 5, 1);   -- AMD -> MAA, at most 1 stop
+-- AMD -> CCU -> MAA | 1 | 16600.00
+```
+This is a case where query #3 genuinely disagrees with query #2's unconstrained
+answer: `fn_cheapest_journey(1, 5)` (Dijkstra, no stop limit) returns
+`AMD -> BOM -> BLR -> MAA` at **16400.00** — 2 stops, cheaper overall, but over
+budget. Dijkstra can't be asked "cheapest subject to ≤1 stop" without
+tracking (node, stops-used) as extra state; the round-limited Bellman-Ford
+handles that constraint natively, which is exactly why query #3 needs its
+own algorithm rather than reusing #2.
 
 ## Example queries this schema answers directly
 
