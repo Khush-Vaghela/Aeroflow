@@ -2,28 +2,34 @@
 
 **Purpose.** A relational database modeling airline operations —
 fleet, maintenance, airport infrastructure, routing, multi-leg flights,
-crew/pilot scheduling, and passenger booking/fares with flight-delay tracking and route-graph journey
-planning.
+crew/pilot scheduling, and passenger booking/fares, with flight-delay tracking and time-aware journey
+planning against the actual flight schedule.
 
-**Architecture.** A normalized PostgreSQL schema of 21 tables with composite keys for per-leg operations, foreign keys
-tying every subsystem together, `CHECK` constraints on all enumerated status
-columns, three triggers enforcing invariants a `CHECK` constraint can't
-express alone (a cross-table fuel-capacity rule, and automatic waitlist
-capacity-guarding/promotion on `Booking`), and three stored functions that
-treat the airport network as a graph (`Route` = edge, `Route_Fare` = edge
-weight) for journey search, cheapest-path, and cheapest-path-within-k-stops.
+**Architecture.** A normalized PostgreSQL schema of 22 tables with composite keys for per-leg operations,
+foreign keys tying every subsystem together, `CHECK` constraints on all
+enumerated status columns, three triggers enforcing invariants a `CHECK`
+constraint can't express alone (a cross-table fuel-capacity rule, and
+automatic seat-map-backed waitlist capacity-guarding/promotion on
+`Booking`), a stored procedure wrapping multi-leg reservation creation in
+one atomic unit, and six stored functions/procedures spanning two graph
+models — the static route network (`Route`/`Route_Fare`) and the real,
+time-expanded flight schedule (`Flight_Legs`) — each solved with the
+algorithm actually suited to the question (DFS, Dijkstra, Bellman-Ford,
+and a DAG shortest-path).
 
 **Features.** Automatic delay computation via generated columns, a
-Reservation/Booking model with real fares, three graph-search stored
-functions (DFS all-paths, Dijkstra, Bellman-Ford k-stops), a fully seeded
-sample dataset, and an ER diagram for quick onboarding.
+Reservation/Booking model with real fares, a generated seat-inventory table
+backing every seat assignment, an atomic multi-leg booking procedure, six
+journey-search functions (three over the static route network, three
+schedule-aware), a fully seeded sample dataset, and an ER diagram for quick
+onboarding.
 
 ## Project files
-- `aeroflow_schema_v2.sql` — table definitions, constraints, triggers, and
-  the three journey-planning stored functions
-- `aeroflow_insert_data_v2.sql` — sample dataset (10 airlines, 20 aircraft,
-  15 flights / 25 legs, 22 reservations, 30 bookings, and more) conformed to
-  the schema
+- `aeroflow_schema_v2.sql` — table definitions, constraints, triggers, the
+  atomic reservation procedure, and all six journey-planning functions
+- `aeroflow_insert_data_v2.sql` — sample dataset (10 airlines, 20 aircraft +
+  generated seat maps, 15 flights / 25 legs, 22 reservations, 30 bookings,
+  and more) conformed to the schema
 - `aeroflow_er_diagram.mermaid` — entity-relationship diagram
 - `README.md` — this file
 
@@ -35,7 +41,7 @@ See `aeroflow_er_diagram.mermaid` — renders natively in GitHub READMEs
 
 ## Entity overview
 
-- **Fleet**: `Airline` → `Aircraft` → `Aircraft_Live_Status`, `Maintenance`
+- **Fleet**: `Airline` → `Aircraft` → `Aircraft_Seat_Map`, `Aircraft_Live_Status`, `Maintenance`
 - **Infrastructure**: `Airport` → `Runway`, `Gate`
 - **Network**: `Route` (airport pairs, priced by `Route_Fare`) → `Flight_Legs`
   (route + sequence per flight) → `Flight`
