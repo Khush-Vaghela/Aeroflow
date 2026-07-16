@@ -34,6 +34,13 @@ erDiagram
         timestamp Last_Updated
     }
 
+    AIRCRAFT_SEAT_MAP {
+        int Aircraft_ID PK FK
+        string Seat_Number PK
+        string Seat_Type 
+        string Seat_Class_Features
+    }
+
     MAINTENANCE {
         int Maintenance_ID PK
         int Aircraft_ID FK
@@ -195,6 +202,7 @@ erDiagram
     AIRCRAFT ||--o| AIRCRAFT_LIVE_STATUS : "current status"
     AIRCRAFT ||--o{ MAINTENANCE : undergoes
     AIRCRAFT ||--o{ FLIGHT : operates
+    AIRCRAFT ||--o{ AIRCRAFT_SEAT_MAP : has
 
     AIRPORT ||--o{ RUNWAY : has
     AIRPORT ||--o{ GATE : has
