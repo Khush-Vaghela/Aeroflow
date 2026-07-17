@@ -130,24 +130,6 @@ GROUP BY a.Airline_Name
 ORDER BY pct_on_time DESC;
 ```
 
-**Derive each flight's overall source/dest airport (post-normalization)**
-```sql
-SELECT f.Flight_ID,
-       first_leg.Source_Airport_ID,
-       last_leg.Dest_Airport_ID
-FROM Flight f
-JOIN LATERAL (
-    SELECT r.Source_Airport_ID
-    FROM Flight_Legs fl JOIN Route r ON r.Route_ID = fl.Route_ID
-    WHERE fl.Flight_ID = f.Flight_ID ORDER BY fl.Leg_Sequence_No ASC LIMIT 1
-) first_leg ON true
-JOIN LATERAL (
-    SELECT r.Dest_Airport_ID
-    FROM Flight_Legs fl JOIN Route r ON r.Route_ID = fl.Route_ID
-    WHERE fl.Flight_ID = f.Flight_ID ORDER BY fl.Leg_Sequence_No DESC LIMIT 1
-) last_leg ON true;
-```
-
 **Aircraft utilization: total flight hours flown in the last 30 days**
 ```sql
 SELECT ac.Aircraft_ID, ac.Model,
@@ -191,20 +173,6 @@ JOIN Gate g ON g.Airport_ID = ug.Airport_ID AND g.Gate_No = ug.Gate_No
 WHERE ug.Airport_ID = 2
 GROUP BY g.Gate_No
 ORDER BY uses DESC;
-```
-
-**Pilots double-booked on overlapping legs (data-quality audit)**
-(the seed data deliberately includes one conflict — Pilot 203 on both
-Flight 1002 and Flight 1006 — so this returns a row out of the box; on
-clean data it should return none)
-```sql
-SELECT pa1.Pilot_ID, fl1.Flight_ID, fl2.Flight_ID
-FROM Pilot_Assign pa1
-JOIN Pilot_Assign pa2 ON pa1.Pilot_ID = pa2.Pilot_ID AND pa1.Flight_ID < pa2.Flight_ID
-JOIN Flight_Legs fl1 ON fl1.Flight_ID = pa1.Flight_ID AND fl1.Route_ID = pa1.Route_ID AND fl1.Leg_Sequence_No = pa1.Leg_Sequence_No
-JOIN Flight_Legs fl2 ON fl2.Flight_ID = pa2.Flight_ID AND fl2.Route_ID = pa2.Route_ID AND fl2.Leg_Sequence_No = pa2.Leg_Sequence_No
-WHERE fl1.Scheduled_Takeoff_Time < fl2.Scheduled_Landing_Time
-  AND fl2.Scheduled_Takeoff_Time < fl1.Scheduled_Landing_Time;
 ```
 
 ## Testing the waitlist trigger
