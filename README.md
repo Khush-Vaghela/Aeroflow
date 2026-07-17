@@ -192,13 +192,3 @@ SELECT Booking_ID, Seat_Number, Booking_Status FROM Booking WHERE Booking_ID IN 
 To see the capacity guard reject an over-capacity direct booking, try
 inserting a `'Confirmed'` row for a leg/seat-type that's already full — it
 will raise an exception telling you to insert it as `'Waitlisted'` instead.
-
-## Possible future extensions
-- Historical table for `Aircraft_Live_Status` (currently 1:1 current-state
-  only; a time-series table would enable full telemetry replay).
-- `Created_At`/`Updated_At` audit columns on the remaining mutable tables
-  (`Maintenance`, `Aircraft_Live_Status` already has `Last_Updated`).
-- The capacity guard currently reads seat totals once per insert; under
-  heavy concurrent booking you'd want `SELECT ... FOR UPDATE` on the
-  Aircraft row (or an advisory lock) to close a narrow race window between
-  the count check and the insert.
