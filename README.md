@@ -14,7 +14,7 @@ automatic seat-map-backed waitlist capacity-guarding/promotion on
 one atomic unit, and six stored functions/procedures spanning two graph
 models — the static route network (`Route`/`Route_Fare`) and the real,
 time-expanded flight schedule (`Flight_Legs`) — each solved with the
-algorithm actually suited to the question (DFS, Dijkstra, Bellman-Ford,
+algorithm actually suited to the question (Dijkstra, Bellman-Ford,
 and a DAG shortest-path).
 
 **Features.** Automatic delay computation via generated columns, a
@@ -60,36 +60,20 @@ answering, rather than one generic approach stretched across all three:
 
 | # | Question | Algorithm | Why this one |
 |---|----------|-----------|---------------|
-| 1 | All possible journeys | DFS via recursive CTE, path array as visited-set | Enumerating *every* simple path is inherently exponential — that's what "list them all" requires, any algorithm included |
-| 2 | Cheapest journey | Dijkstra's algorithm | Finds the answer in polynomial time (O(V²+E) here) without ever enumerating all paths — the reason to prefer it over "run #1 and take MIN()" |
-| 3 | Cheapest journey, ≤ k stops | Bellman-Ford, restricted to k+1 relaxation rounds | Dijkstra has no native hop-limit variant without expanding the state space to (node, stops-used) pairs; Bellman-Ford naturally bounds path length by the number of rounds run |
+| 1 | Cheapest journey | Dijkstra's algorithm | Finds the answer in polynomial time (O(V²+E) here) without ever enumerating all paths — the reason to prefer it over "run #1 and take MIN()" |
+| 2 | Cheapest journey, ≤ k stops | Bellman-Ford, restricted to k+1 relaxation rounds | Dijkstra has no native hop-limit variant without expanding the state space to (node, stops-used) pairs; Bellman-Ford naturally bounds path length by the number of rounds run |
 
-All three take an optional `p_seat_type` (`'Economy'` default or
+Both take an optional `p_seat_type` (`'Economy'` default or
 `'Business'`) since fares differ by cabin class.
 
-**1. All possible journeys between a source and destination, with total cost**
-```sql
-SELECT journey_path, num_stops, total_cost
-FROM AeroFlow.fn_all_journeys(1, 7);   -- Airport 1 = AMD, Airport 7 = CCU
--- journey_path             | num_stops | total_cost
--- AMD -> CCU               | 0         | 9900.00
--- AMD -> DEL -> CCU        | 1         | 15200.00
--- AMD -> BOM -> DEL -> CCU | 2         | 18500.00
--- ... (8 total paths within the default 4-stop limit)
-```
-`p_max_stops` (default 4) bounds recursion depth; raise it if you need longer
-itineraries. The cycle-blocking `NOT (dest = ANY(path))` check means it never
-loops forever even without that bound — it just controls how deep the DFS
-goes.
-
-**2. The single cheapest journey**
+**1. The single cheapest journey**
 ```sql
 SELECT journey_path, total_cost
 FROM AeroFlow.fn_cheapest_journey(1, 7);
 -- AMD -> CCU | 9900.00
 ```
 
-**3. Cheapest journey with at most k stops**
+**2. Cheapest journey with at most k stops**
 ```sql
 SELECT journey_path, num_stops, total_cost
 FROM AeroFlow.fn_cheapest_journey_k_stops(1, 5, 1);   -- AMD -> MAA, at most 1 stop
